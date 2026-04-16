@@ -25,7 +25,7 @@ interface PDFPreviewerProps {
   companyName?: string;
 }
 
-export function PDFPreviewer({
+export default function PDFPreviewer({
   data,
   version,
   isOptimizing,

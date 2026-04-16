@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ResumeSchema, EvaluationResult } from "@/types/schema";
 import {
@@ -8,7 +9,15 @@ import {
   DEFAULT_SETTINGS,
   LS_SETTINGS_KEY,
 } from "@/types/settings";
-import { PDFPreviewer } from "@/components/PDFPreviewer";
+
+// ── Dynamic import — ssr: false prevents @react-pdf/renderer from running
+// on the server, which crashes because it calls browser APIs (DOMMatrix etc.)
+const PDFPreviewer = dynamic(() => import("@/components/PDFPreviewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full min-h-[600px] bg-stone-100 animate-pulse rounded-lg" />
+  ),
+});
 import { Toast, ToastProps } from "@/components/Toast";
 import { Loader2, Sparkles, UploadCloud, CheckCircle2, XCircle, Brain, Settings } from "lucide-react";
 import { RiCloseLine } from "@remixicon/react";
@@ -167,6 +176,11 @@ export default function Dashboard() {
   const [outputData, setOutputData]        = useState<ResumeSchema>(DEFAULT_RESUME);
   const [masterFile, setMasterFile]        = useState<File | null>(null);
   const [isParsed, setIsParsed]            = useState(false);
+
+  // isClient prevents PDF components from mounting until the browser is active.
+  // Belt-and-suspenders alongside the dynamic({ ssr: false }) on PDFPreviewer.
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => { setIsClient(true); }, []);
 
   const [isExtracting, setIsExtracting]  = useState(false);
   const [isOptimizing, setIsOptimizing]  = useState(false);
@@ -589,15 +603,19 @@ export default function Dashboard() {
 
         {/* ══ RIGHT COLUMN: PDF Preview + Evaluation ═════════════════════════ */}
         <div className="flex flex-col">
-          <PDFPreviewer
-            data={outputData}
-            version={pdfVersion}
-            isOptimizing={isOptimizing}
-            isOptimized={isOptimized}
-            evaluation={evaluation}
-            isEvaluating={isEvaluating}
-            companyName={extractCompanyFromJD(jd)}
-          />
+          {isClient ? (
+            <PDFPreviewer
+              data={outputData}
+              version={pdfVersion}
+              isOptimizing={isOptimizing}
+              isOptimized={isOptimized}
+              evaluation={evaluation}
+              isEvaluating={isEvaluating}
+              companyName={extractCompanyFromJD(jd)}
+            />
+          ) : (
+            <div className="h-full min-h-[600px] bg-stone-100 animate-pulse rounded-lg" />
+          )}
         </div>
       </div>
     </div>

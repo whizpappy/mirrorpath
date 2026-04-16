@@ -180,10 +180,17 @@ function BulletList({ bullets }: { bullets?: string[] }) {
   return (
     <>
           {bullets.map((b, i) => {
-            // Aggressively strip any leading non-alphanumeric characters
-            // (but keep leading asterisks for bold markers). Run trim first
-            // so we do not leave stray whitespace.
-            const cleanedText = (b ?? "").trim().replace(/^[^a-zA-Z0-9*]+/, "");
+            // Two-step strip — order matters:
+            // 1. Remove leading whitespace, •, and - (safe: none of these are bold markers).
+            // 2. Remove a lone * used as a bullet (e.g. "* text") but NOT ** bold openers.
+            //    Lookahead (?!\*) ensures "**Architected**" is never touched.
+            //    e.g. "* **Led**..."   → "**Led**..."   ✓ (lone * stripped, ** kept)
+            //    e.g. " • **Led**..."  → "**Led**..."   ✓ (space+• stripped, ** kept)
+            //    e.g. "**Led**..."     → "**Led**..."   ✓ (nothing stripped)
+            const cleanedText = (b ?? "")
+              .replace(/^[\s•\-]+/, "")
+              .replace(/^\*(?!\*)\s*/, "")
+              .trim();
             return (
               <View key={i} style={styles.bulletItem}>
                 {/* Exactly one Helvetica dot glyph, inline style to ensure encoding */}
@@ -198,6 +205,10 @@ function BulletList({ bullets }: { bullets?: string[] }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export const ResumePDF = ({ data }: { data: ResumeSchema }) => {
+  // Guard: @react-pdf/renderer calls browser APIs (DOMMatrix, canvas, etc.).
+  // If this component somehow reaches the server, return null rather than crash.
+  if (typeof window === "undefined") return null;
+
   if (!data?.PersonalDetails || !Array.isArray(data.Experience)) {
     return (
       <Document>

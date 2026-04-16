@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateCompletion, stripFences } from "@/lib/llm";
-import { Provider, DEFAULT_SETTINGS } from "@/types/settings";
+import { Provider } from "@/types/settings";
 import mammoth from "mammoth";
 
 export const runtime = "nodejs";
@@ -8,6 +8,15 @@ export const runtime = "nodejs";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(request: Request) {
+  // ── Env guard — fast-fail with a clear message rather than a cryptic 500 ───
+  if (!process.env.GROQ_API_KEY) {
+    console.error("EXTRACT_ERROR: Missing GROQ_API_KEY env variable.");
+    return NextResponse.json(
+      { error: "Server configuration error: GROQ_API_KEY is not set. Add it to .env.local and redeploy." },
+      { status: 500 }
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -31,22 +40,51 @@ export async function POST(request: Request) {
 
     let rawText = "";
 
+    // ── PDF parsing ──────────────────────────────────────────────────────────
     if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      // pdf-parse v2 only exports named classes — no default function export.
-      // Using require() at call-site keeps webpack from bundling it;
-      // Node resolves it natively via experimental.serverComponentsExternalPackages.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-      const { PDFParse } = require("pdf-parse") as { PDFParse: new (opts: { data: Uint8Array }) => { getText: () => Promise<{ text: string }>; destroy: () => Promise<void> } };
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText();
-      rawText = result.text;
-      await parser.destroy().catch(() => { /* ignore cleanup errors */ });
+      try {
+        // pdf-parse is require()'d at call-site to keep webpack from bundling it.
+        // Supports both v1 (function export) and v2 (class export) automatically.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const pdfMod = require("pdf-parse");
+
+        if (typeof pdfMod.PDFParse === "function") {
+          // v2 class API: new PDFParse({ data: Uint8Array })
+          const parser = new pdfMod.PDFParse({ data: new Uint8Array(buffer) });
+          const result = await parser.getText();
+          rawText = result.text ?? "";
+          await parser.destroy().catch(() => { /* ignore cleanup errors */ });
+        } else {
+          // v1 function API: pdfParse(buffer) or pdfParse.default(buffer)
+          const fn: (buf: Buffer) => Promise<{ text: string }> =
+            typeof pdfMod === "function" ? pdfMod : pdfMod.default;
+          const result = await fn(buffer);
+          rawText = result.text ?? "";
+        }
+      } catch (pdfErr) {
+        console.error("EXTRACT_ERROR: PDF parse failed:", pdfErr);
+        return NextResponse.json(
+          { error: "Please ensure your file is a valid, text-based PDF. Scanned or image-only PDFs are not supported." },
+          { status: 400 }
+        );
+      }
+
+    // ── DOCX parsing ──────────────────────────────────────────────────────────
     } else if (
       file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       file.name.endsWith(".docx")
     ) {
-      const result = await mammoth.extractRawText({ buffer });
-      rawText = result.value;
+      try {
+        const result = await mammoth.extractRawText({ buffer });
+        rawText = result.value ?? "";
+      } catch (docxErr) {
+        console.error("EXTRACT_ERROR: DOCX parse failed:", docxErr);
+        return NextResponse.json(
+          { error: "Please ensure your file is a valid .docx file." },
+          { status: 400 }
+        );
+      }
+
     } else {
       return NextResponse.json(
         { error: "Unsupported file type. Please upload a PDF or DOCX file." },
@@ -61,13 +99,13 @@ export async function POST(request: Request) {
       );
     }
 
+    // ── LLM extraction ────────────────────────────────────────────────────────
     const content = await generateCompletion({
       provider,
       model,
       messages: [
         {
           role: "system",
-          // Compressed prompt — saves input tokens on the 8B model.
           content:
             "Extract the resume text into this exact JSON schema. Preserve all metrics, dates, and names verbatim. Output RAW JSON only — no markdown fences.\n\n" +
             "Schema: { PersonalDetails: { name, email, phone?, linkedin?, website? }, ProfessionalSummary: string, " +
@@ -92,8 +130,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(parsed);
+
   } catch (error: unknown) {
-    console.error("Extraction error:", error);
+    console.error("EXTRACT_ERROR:", error);
 
     const errStatus = (error as { status?: number })?.status;
     const errMsg    = error instanceof Error ? error.message : "";
@@ -106,9 +145,11 @@ export async function POST(request: Request) {
       );
     }
 
+    // Return 400 (not 500) so the frontend shows a user-readable message
+    // rather than a generic "Failed to extract" crash.
     return NextResponse.json(
-      { error: errMsg || "Failed to extract resume data." },
-      { status: 500 }
+      { error: errMsg || "Please ensure your file is a valid PDF or .docx" },
+      { status: 400 }
     );
   }
 }
