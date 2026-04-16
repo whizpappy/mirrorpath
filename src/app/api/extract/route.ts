@@ -93,9 +93,10 @@ export async function POST(request: Request) {
     }
 
     if (!rawText.trim()) {
+      console.error("EXTRACT_ERROR_DETAIL: Parser returned empty text for file:", file.name);
       return NextResponse.json(
-        { error: "No text could be extracted. The file may be scanned or image-based." },
-        { status: 400 }
+        { error: "Parser Error: No text found. Check Vercel logs for detail." },
+        { status: 500 }
       );
     }
 
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
     return NextResponse.json(parsed);
 
   } catch (error: unknown) {
-    console.error("EXTRACT_ERROR:", error);
+    console.error("EXTRACT_ERROR_DETAIL:", error);
 
     const errStatus = (error as { status?: number })?.status;
     const errMsg    = error instanceof Error ? error.message : "";

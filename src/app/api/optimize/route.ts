@@ -116,7 +116,7 @@ Strict Constraints:
 2. PROFESSIONAL SUMMARY: Rewrite to exactly 3 to 4 sentences. Mirror the JD's tone and domain vocabulary.
 3. EXPERIENCE BULLETS: Each Experience entry must have EXACTLY 3 to 5 bullets. Each Projects entry must have EXACTLY 3 bullets.
 4. BULLET FORMAT: Every bullet must follow Action + Task + Metric formula. Do NOT include bullet characters (•, -, *) at the start of bullet strings — the PDF renderer adds them automatically. No "AI fluff" or filler phrases.
-5. BOLD MARKERS: Wrap ALL quantitative metrics (percentages like 44%, monetary values like $80M, time periods like 3 months, user counts like 50k) AND the primary action verb of each bullet in double asterisks. Example: "**Architected** a regulatory identity pipeline, reducing onboarding time by **38%**."
+5. BOLD MARKERS — MANDATORY FOR ATS SCANNABILITY: Wrap ALL numbers and percentages (e.g., **44%**, **$80M**, **3 months**, **50k users**) AND the primary action verb of each bullet in double asterisks (**). This is NON-NEGOTIABLE. If a bullet contains no metric, re-frame the achievement to include a quantifiable outcome before bolding. Example: "**Architected** a regulatory identity pipeline, reducing onboarding time by **38%**."
 6. VOCABULARY: For Fintech/Legal-tech use terms like "covenant", "regulatory infrastructure", "mission-critical", "high-stakes compliance". For Design use "0-to-1 ownership", "design system", "explainability UX", "AI-native interface".
 7. CHARACTER RESTRICTIONS: ABSOLUTELY FORBIDDEN - em-dashes (—), en-dashes (–), arrows (→), curly quotes.
 8. NO DUPLICATE FACTS: Each bullet within a role must describe a DIFFERENT achievement. Never repeat the same metric, tool, product, or claim across two bullets in the same entry.

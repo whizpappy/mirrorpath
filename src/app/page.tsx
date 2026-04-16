@@ -106,27 +106,57 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 // ── Company name extractor ────────────────────────────────────────────────────
 /**
- * Best-effort heuristic to pull a company name from a JD string.
- * Returns a filesystem-safe slug, or "" if nothing is found.
+ * Grabs the first company-like token from a JD, ignoring section-header words
+ * like "About". Handles numeric-prefixed names like "9fin".
+ * Returns a filesystem-safe slug (max 30 chars) or "Tailored" if nothing found.
  */
 function extractCompanyFromJD(jd: string): string {
   if (!jd) return "Tailored";
 
-  // High-priority explicit match: handles leading "At Acme" and "Join Acme as"
-  const explicit = jd.match(/^At\s+([A-Z][A-Za-z0-9]+)/i) || jd.match(/Join\s+([A-Z][A-Za-z0-9]+)\s+as/i);
-  if (explicit?.[1]) {
-    const name = explicit[1].trim();
-    if (/^you$/i.test(name)) return "Tailored";
-    return name.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_]/g, "").slice(0, 30);
+  // Words that are never a company name on their own
+  const SKIP_WORD = /^(about|at|join|we|our|the|a|an|is|are|has|have|for|in|of|and|or|to|be|you|your|this|that|role|position|company|overview)$/i;
+  // Lines that are pure section headers — but we still scan them for a name
+  const HEADER_LINE = /^(about|company|role|position|description|responsibilities|requirements|overview|what|why|who)/i;
+
+  const slug = (s: string) =>
+    s.replace(/[^A-Za-z0-9]/g, "").slice(0, 30);
+
+  // Explicit high-signal patterns first
+  const EXPLICIT = [
+    /\bJoin\s+([A-Za-z0-9][A-Za-z0-9\s]{1,25}?)\s+(?:as|and|to)\b/,
+    /\bat\s+([A-Za-z0-9][A-Za-z0-9]{2,25}?)(?:[,.\s]|$)/,
+  ];
+  for (const re of EXPLICIT) {
+    const m = jd.match(re);
+    if (m?.[1]) {
+      const s = slug(m[1].trim());
+      if (s && !SKIP_WORD.test(s)) return s;
+    }
   }
 
-  // Advanced fallback: pick the first non-empty line that is NOT a common section header
-  const lines = jd.split('\n').map((l) => l.trim());
-  const candidateLine = lines.find((line) => line && !line.toLowerCase().includes('about') && !line.toLowerCase().includes('responsibilities') && !line.toLowerCase().includes('requirements')) || "";
-  let candidate = candidateLine.replace(/at\s+/i, '').split(' ')[0] || '';
-  candidate = candidate.trim();
-  if (!candidate || /^you$/i.test(candidate)) return "Tailored";
-  return candidate.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_]/g, "").slice(0, 30);
+  // Scan the first 8 non-empty lines for the first company-like token
+  const lines = jd.split("\n").map(l => l.trim()).filter(Boolean).slice(0, 8);
+  for (const line of lines) {
+    const words = line.split(/\s+/);
+    for (const word of words) {
+      const clean = slug(word);
+      if (!clean || clean.length < 2) continue;
+      if (SKIP_WORD.test(clean)) continue;
+      // Accept if it starts with a capital letter or digit (handles 9fin, Acme, etc.)
+      if (/^[A-Z0-9]/.test(clean)) return clean;
+      // If this was a header line, keep scanning; otherwise stop at first word
+      if (!HEADER_LINE.test(line)) break;
+    }
+  }
+
+  // Legacy two-pattern fallback kept for edge cases
+  const legacyMatch = jd.match(/^(?:About|Company:?)\s+([A-Z][A-Za-z0-9\s&.,-]+?)(?:\n|\.|\s{2})/m);
+  if (legacyMatch?.[1]) {
+    const s = slug(legacyMatch[1].trim());
+    if (s && !SKIP_WORD.test(s)) return s;
+  }
+
+  return "Tailored";
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -603,7 +633,7 @@ export default function Dashboard() {
 
         {/* ══ RIGHT COLUMN: PDF Preview + Evaluation ═════════════════════════ */}
         <div className="flex flex-col">
-          {isClient ? (
+          {isClient && (
             <PDFPreviewer
               data={outputData}
               version={pdfVersion}
@@ -613,8 +643,6 @@ export default function Dashboard() {
               isEvaluating={isEvaluating}
               companyName={extractCompanyFromJD(jd)}
             />
-          ) : (
-            <div className="h-full min-h-[600px] bg-stone-100 animate-pulse rounded-lg" />
           )}
         </div>
       </div>
